@@ -1,3 +1,11 @@
 node_modules/
 .env
 .DS_Store
+postman/*
+!postman/collections/
+!postman/environments/
+postman/collections/*
+!postman/collections/*.postman_collection.json
+postman/environments/*
+!postman/environments/*.example.postman_environment.json
+.postman/
