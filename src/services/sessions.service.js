@@ -1,8 +1,6 @@
-// src/services/sessions.service.js
 import { getUserByEmail, saveUser } from '../repositories/users.repository.js';
 import { hashPassword } from '../utils/hash.js';
 
-// Expresión regular para validar formato de email
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const registerUser = async (userData) => {
