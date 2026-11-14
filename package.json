@@ -1,7 +1,7 @@
 {
   "name": "proyecto-backend-2",
   "version": "1.0.0",
-  "description": "Pre-entrega 1 - Plataforma de Eventos e Inscripciones",
+  "description": "Plataforma de actores, directores y casting",
   "main": "src/server.js",
   "type": "module",
   "scripts": {
@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.0.0"
   }
 }
