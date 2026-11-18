@@ -1,5 +1,5 @@
-import { registerUser, loginUser } from '../services/sessions.service.js';
 import { config } from '../config/config.js';
+import { generateToken } from '../utils/jwt.js';
 
 const COOKIE_NAME = 'currentUser';
 
@@ -9,26 +9,20 @@ const baseCookieOptions = {
   secure: config.nodeEnv === 'production'
 };
 
-export const register = async (req, res) => {
-  try {
-    const newUser = await registerUser(req.body);
-
-    return res.status(201).json({
-      status: 'success',
-      payload: newUser
-    });
-  } catch (error) {
-    const statusCode = error.status || 500;
-    return res.status(statusCode).json({
-      status: 'error',
-      message: error.message || 'Error interno del servidor'
-    });
-  }
+export const register = (req, res) => {
+  return res.status(201).json({
+    status: 'success',
+    payload: req.user
+  });
 };
 
-export const login = async (req, res) => {
+export const login = (req, res) => {
   try {
-    const { token } = await loginUser(req.body);
+    const token = generateToken({
+      id: req.user.id,
+      email: req.user.email,
+      role: req.user.role
+    });
 
     res.cookie(COOKIE_NAME, token, {
       ...baseCookieOptions,
@@ -40,8 +34,7 @@ export const login = async (req, res) => {
       message: 'Login correcto'
     });
   } catch (error) {
-    const statusCode = error.status || 500;
-    return res.status(statusCode).json({
+    return res.status(500).json({
       status: 'error',
       message: error.message || 'Error interno del servidor'
     });

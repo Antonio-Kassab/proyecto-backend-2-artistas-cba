@@ -1,6 +1,6 @@
 # 🎭 Plataforma de Eventos e Inscripciones (Castings Teatrales y Audiovisuales)
 
-API REST modular y escalable para la gestión de eventos, audiciones y castings en Córdoba Capital. Permite a los usuarios consultar convocatorias y eventos artísticos, registrarse, autenticarse mediante JWT en cookies `HttpOnly`, y consultar su sesión activa.
+API REST modular y escalable para la gestión de eventos, audiciones y castings en Córdoba Capital. Permite a los usuarios consultar convocatorias y eventos artísticos, registrarse y autenticarse mediante **Passport.js** con JWT almacenado en cookies `HttpOnly`, y consultar su sesión activa.
 
 > Proyecto desarrollado para la cursada de **Programación Backend II - Coderhouse**.
 
@@ -11,6 +11,7 @@ API REST modular y escalable para la gestión de eventos, audiciones y castings 
 * **Node.js** (v20+ con soporte nativo para módulos ESM)
 * **Express.js** (Framework web minimalista para routing y middlewares)
 * **MongoDB & Mongoose** (Base de datos NoSQL y ODM para modelado de datos)
+* **Passport.js** (`passport`, `passport-local`, `passport-jwt`) (Estrategias centralizadas de autenticación)
 * **Bcrypt** (Algoritmo de hashing seguro para contraseñas)
 * **JsonWebToken (JWT)** (Generación y verificación de tokens de autenticación)
 * **Cookie-Parser** (Lectura y manejo de cookies `HttpOnly` en Express)
@@ -70,18 +71,35 @@ El proyecto está diseñado siguiendo una arquitectura en capas desacoplada para
 
 ```text
 src/
-├── app.js               # Configuración de Express, cookie-parser y montaje de rutas (sin listen)
+├── app.js               # Configuración de Express, cookie-parser, Passport y montaje de rutas (sin listen)
 ├── server.js            # Punto de entrada operacional: conexión a MongoDB y listen del servidor
-├── config/              # Centralización y validación de variables de entorno y conexión a DB
-├── routes/              # Definición de endpoints HTTP y asociación con middlewares y controladores
-├── controllers/         # Recepción de peticiones (req), manejo de cookies y envío de respuestas (res)
-├── services/            # Capa de lógica de negocio y reglas del dominio
+├── config/              # Variables de entorno, conexión a MongoDB y estrategias de Passport (passport.config.js)
+├── routes/              # Definición de endpoints HTTP y delegación en estrategias de Passport
+├── controllers/         # Recepción de peticiones (req), generación de JWT, cookies y envío de respuestas
+├── services/            # Capa reservada para lógica de negocio de próximos módulos (eventos, tickets)
 ├── repositories/        # Abstracción de acceso a datos independiente del motor de base de datos
 ├── dao/                 # Data Access Object: operaciones directas de persistencia con Mongoose
 ├── models/              # Esquemas y modelos de datos (User, Event)
-├── middlewares/         # Middlewares de control (authMiddleware con JWT, futura autorización)
+├── middlewares/         # Middleware puente passportCall (Passport) y futura autorización por rol
 └── utils/               # Funciones utilitarias transversales (hash.js con bcrypt, jwt.js con jsonwebtoken)
 ```
+
+---
+
+## 🔐 Estrategias de Autenticación (Passport.js)
+
+Toda la lógica de autenticación y validación de credenciales está centralizada en `src/config/passport.config.js` e inicializada desde `src/app.js` mediante `initializePassport()` y `passport.initialize()`. Las rutas delegan en Passport con sesiones deshabilitadas (`session: false`) usando el wrapper `passportCall(strategy)` de `src/middlewares/auth.middleware.js`.
+
+| Estrategia | Tipo | Qué hace |
+| :--- | :--- | :--- |
+| `register` | `passport-local` | Valida campos obligatorios, formato de email y longitud mínima de contraseña; normaliza email; verifica unicidad (`409`); hashea con `bcrypt` y crea el usuario con rol `user` por defecto (sin devolver `password`). |
+| `login` | `passport-local` | Normaliza el email, busca el usuario y compara la contraseña con `comparePassword`. Si falla responde `401` `"Credenciales inválidas"`. Si coincide, entrega `{ id, email, role }` en `req.user` para que el **controller** firme el JWT y guarde la cookie `currentUser` (`httpOnly: true`). |
+| `current` | `passport-jwt` | Extrae el token desde la cookie `currentUser`, verifica firma y expiración con `JWT_SECRET` y carga `{ id, email, role }` en `req.user` (o responde `401` `"No autenticado"` si no hay token válido). |
+
+> **Nota sobre Logout:** `POST /api/sessions/logout` limpia directamente la cookie `currentUser` desde `sessions.controller.js`, sin requerir pasar por Passport.
+
+### Preparación para futuros providers externos
+La estructura de `src/config/passport.config.js` queda preparada para incorporar nuevas estrategias de autenticación con **providers externos (Google, GitHub, etc.)** registrándolas dentro de `initializePassport()`, **sin necesidad de modificar `src/app.js`** ni reescribir el manejo de JWT y cookies.
 
 ---
 
@@ -133,7 +151,7 @@ Lista de eventos y castings disponibles.
 ### 3. Sesiones y Autenticación
 
 #### `POST /api/sessions/register`
-Registra un nuevo usuario en MongoDB con la contraseña hasheada mediante `bcrypt`. Valida campos obligatorios, formato de email, longitud mínima de contraseña (6 caracteres), normaliza el email (`trim` y `lowercase`), y evita duplicados asignando el rol `user` por defecto.
+Delega en la estrategia `'register'` de **Passport.js** (`passport-local`). Valida campos obligatorios, formato de email, longitud mínima de contraseña (6 caracteres), normaliza el email (`trim` y `lowercase`), evita duplicados, hashea la contraseña mediante `bcrypt` y registra al usuario en MongoDB asignando el rol `user` por defecto.
 
 * **Request (JSON):**
 ```json
@@ -179,7 +197,7 @@ Registra un nuevo usuario en MongoDB con la contraseña hasheada mediante `bcryp
 ---
 
 #### `POST /api/sessions/login`
-Valida `email` y `password` comparando contra el hash almacenado mediante `comparePassword`. Si las credenciales son válidas, firma un JWT con `{ id, email, role }` y lo guarda en la cookie **`currentUser`** (`httpOnly: true`, `sameSite: 'lax'`, `maxAge: 3600000`, `secure: true` solo en producción).
+Delega la validación de `email` y `password` en la estrategia `'login'` de **Passport.js** (`passport-local` + `comparePassword`). Tras la autenticación exitosa, **`sessions.controller.js`** (no la estrategia) firma un JWT con `{ id, email, role }` y lo guarda en la cookie **`currentUser`** (`httpOnly: true`, `sameSite: 'lax'`, `maxAge: 3600000`, `secure: true` solo en producción).
 
 * **Request (JSON):**
 ```json
@@ -217,7 +235,7 @@ Valida `email` y `password` comparando contra el hash almacenado mediante `compa
 ---
 
 #### `GET /api/sessions/current`
-Ruta protegida por `authMiddleware`. Lee la cookie `currentUser`, verifica la firma y expiración del JWT, guarda los datos en `req.user` y devuelve la sesión actual sin exponer la contraseña.
+Ruta protegida mediante la estrategia `'current'` de **Passport.js** (`passport-jwt` vía `passportCall('current')`). Extrae el JWT de la cookie `currentUser`, verifica firma y expiración, deja los datos en `req.user` y devuelve la sesión actual sin exponer la contraseña.
 
 * **Request:** Enviar cookie `currentUser` (Postman y navegadores la adjuntan automáticamente después del login).
 
